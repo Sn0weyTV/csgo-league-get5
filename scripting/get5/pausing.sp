@@ -1,3 +1,5 @@
+MatchTeam teamCurrentlyPaused;
+
 public bool Pauseable() {
   return g_GameState >= Get5State_KnifeRound && g_PausingEnabledCvar.BoolValue;
 }
@@ -26,68 +28,52 @@ public Action Command_Pause(int client, int args) {
     return Plugin_Handled;
   }
 
-  g_InExtendedPause = false;
+  int currentTimestamp = GetTime();
 
-  if (client == 0) {
-    g_InExtendedPause = true;
-
-    Pause();
-    Get5_MessageToAll("%t", "AdminForcePauseInfoMessage");
+  if (g_cooldownTime[client] != -1 && g_cooldownTime[client] > currentTimestamp) {
     return Plugin_Handled;
   }
 
-  MatchTeam team = GetClientMatchTeam(client);
-  int maxPauses = g_MaxPausesCvar.IntValue;
-  char pausePeriodString[32];
-  if (g_ResetPausesEachHalfCvar.BoolValue) {
-    Format(pausePeriodString, sizeof(pausePeriodString), " %t", "PausePeriodSuffix");
-  }
+  g_cooldownTime[client] = currentTimestamp + 15;
 
-  if (maxPauses > 0 && g_TeamPausesUsed[team] >= maxPauses && IsPlayerTeam(team)) {
-    Get5_Message(client, "%t", "MaxPausesUsedInfoMessage", maxPauses, pausePeriodString);
-    return Plugin_Handled;
-  }
+  GetConVarString(g_PauseModeCvar, activePauseMode, sizeof(activePauseMode));
 
-  int maxPauseTime = g_MaxPauseTimeCvar.IntValue;
-  if (maxPauseTime > 0 && g_TeamPauseTimeUsed[team] >= maxPauseTime && IsPlayerTeam(team)) {
-    Get5_Message(client, "%t", "MaxPausesTimeUsedInfoMessage", maxPauseTime, pausePeriodString);
-    return Plugin_Handled;
-  }
+  if (StrEqual(activePauseMode, "Faceit", false)) {
+    MatchTeam currentTeam = CSTeamToMatchTeam(GetClientTeam(client));
+    GetClientAuthId(client, AuthId_SteamID64, steamid, sizeof(steamid));
+    int maxPauseTimeAllowed = g_MaxPauseTimeCvar.IntValue;
 
-  g_TeamReadyForUnpause[MatchTeam_Team1] = false;
-  g_TeamReadyForUnpause[MatchTeam_Team2] = false;
-
-  // If the pause will need explicit resuming, we will create a timer to poll the pause status.
-  bool need_resume = Pause(g_FixedPauseTimeCvar.IntValue, MatchTeamToCSTeam(team));
-  if (IsPlayer(client)) {
-    Get5_MessageToAll("%t", "MatchPausedByTeamMessage", client);
-  }
-
-  if (IsPlayerTeam(team)) {
-    if (need_resume) {
-      CreateTimer(1.0, Timer_PauseTimeCheck, team, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+    if (maxPauseTimeAllowed > 0 && g_TeamPauseTimeUsed[currentTeam] >= maxPauseTimeAllowed) {
+      Get5_Message(client, "You have no more timeout time remaining.");
+      return Plugin_Handled;
     }
 
-    g_TeamPausesUsed[team]++;
+    ServerCommand("mp_pause_match");
+    teamCurrentlyPaused = currentTeam;
 
-    pausePeriodString = "";
-    if (g_ResetPausesEachHalfCvar.BoolValue) {
-      Format(pausePeriodString, sizeof(pausePeriodString), " %t", "PausePeriodSuffix");
-    }
+    int timeLeft = maxPauseTimeAllowed - g_TeamPauseTimeUsed[currentTeam];
+    int timeInMinutes = timeLeft / 60;
+    int timeInSeconds = timeLeft % 60;
 
-    if (g_MaxPausesCvar.IntValue > 0) {
-      int pausesLeft = g_MaxPausesCvar.IntValue - g_TeamPausesUsed[team];
-      if (pausesLeft == 1 && g_MaxPausesCvar.IntValue > 0) {
-        Get5_MessageToAll("%t", "OnePauseLeftInfoMessage", g_FormattedTeamNames[team], pausesLeft,
-                          pausePeriodString);
-      } else if (g_MaxPausesCvar.IntValue > 0) {
-        Get5_MessageToAll("%t", "PausesLeftInfoMessage", g_FormattedTeamNames[team], pausesLeft,
-                          pausePeriodString);
+    int currentTeamIndex = -1;
+    int index = -1;
+
+    while ((index = FindEntityByClassname(index, "cs_team_manager"))) {
+      int teamNumber = GetEntProp(index, Prop_Send, "m_iTeamNum");
+      int csTeam = MatchTeamToCSTeam(currentTeam);
+      if (teamNumber == csTeam) {
+        currentTeamIndex = index
       }
     }
-  }
 
-  return Plugin_Handled;
+    char currentTeamName[32];
+    GetEntPropString(currentTeamIndex, Prop_Send, "m_szClanTeamname", currentTeamName, 32);
+    Get5_MessageToAll("%s has %i minute(s) %i second(s) left for pauses.", currentTeamName, timeInMinutes, timeInSeconds);
+
+    pauseTimerHandler = CreateTimer(1.0, Timer_PauseTimeCheck, currentTeam, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+
+    return Plugin_Handled;
+  }
 }
 
 public Action Timer_PauseTimeCheck(Handle timer, int data) {

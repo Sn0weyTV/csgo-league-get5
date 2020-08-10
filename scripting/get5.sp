@@ -68,6 +68,7 @@ ConVar g_MaxBackupAgeCvar;
 ConVar g_MaxPausesCvar;
 ConVar g_MaxPauseTimeCvar;
 ConVar g_MessagePrefixCvar;
+ConVar g_PauseModeCvar;
 ConVar g_PausingEnabledCvar;
 ConVar g_PrettyPrintJsonCvar;
 ConVar g_ResetPausesEachHalfCvar;
@@ -306,6 +307,7 @@ public void OnPluginStart() {
   g_ResetPausesEachHalfCvar =
       CreateConVar("get5_reset_pauses_each_half", "1",
                    "Whether pause limits will be reset each halftime period");
+  g_PauseModeCvar = CreateConVar("get5_pause_mode", "", "Which pause mode to be used. Faceit: Uses timer set by get5_max_pause_time. Valve: Uses valve pausing method. See repo for settings. \"\" Default will use get5's pausing system.");
   g_PausingEnabledCvar = CreateConVar("get5_pausing_enabled", "1", "Whether pausing is allowed.");
   g_PrettyPrintJsonCvar = CreateConVar("get5_pretty_print_json", "1", "Whether all JSON output is in pretty-print format.");
   g_ServerIdCvar = CreateConVar(
